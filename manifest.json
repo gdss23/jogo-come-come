@@ -1,0 +1,16 @@
+{
+  "name": "Come-Come Retro",
+  "short_name": "Come-Come",
+  "description": "Jogo do Come-Come estilo antigo",
+  "start_url": "index.html",
+  "display": "fullscreen",
+  "background_color": "#000000",
+  "theme_color": "#ffff00",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/80/80842.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
