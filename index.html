@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Come-Come Gigante</title>
+    <style>
+        body {
+            background-color: #111;
+            color: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 10px;
+        }
+        #placar { font-size: 32px; color: yellow; margin: 10px 0; font-weight: bold; }
+        canvas { 
+            background-color: black; 
+            border: 5px solid blue;
+            display: block;
+            margin: 0 auto;
+            /* A tela now se adapta, mas tenta ficar no tamanho máximo */
+            max-width: 100%; 
+            height: auto;
+            touch-action: none;
+        }
+        #btnIniciar {
+            background-color: #00ff00;
+            color: black;
+            font-size: 30px;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 20px 0;
+            box-shadow: 0 0 15px green;
+        }
+        #btnIniciar:active { background-color: #00cc00; }
+        
+        /* Controles BEM separados */
+        #controles {
+            margin-top: 40px; /* Mais espaço em cima */
+            margin-bottom: 40px; /* Mais espaço embaixo */
+            display: grid;
+            grid-template-areas: 
+                ". cima ."
+                "esq baixo dir";
+            grid-gap: 30px; /* ESPAÇO BEM GRANDE ENTRE OS BOTÕES */
+            width: 320px;   /* Área maior para os botões não ficarem amassados */
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .botao-seta {
+            background-color: #333;
+            color: white;
+            font-size: 45px; /* Letras gigantes */
+            border: 3px solid #666;
+            border-radius: 15px;
+            padding: 25px 0; /* Botões altos */
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            box-shadow: 0 5px 0 #111; /* Sombra 3D */
+        }
+        .botao-seta:active { 
+            background-color: #555;
+            box-shadow: 0 0 0 #111; 
+            transform: translateY(5px); 
+        }
+        #cima { grid-area: cima; }
+        #baixo { grid-area: baixo; }
+        #esq { grid-area: esq; }
+        #dir { grid-area: dir; }
+        #msg { font-size: 20px; color: #0ff; height: 30px; margin-top: 10px;}
+    </style>
+</head>
+<body>
+
+    <div id="placar">Pontos: <span id="pontos">0</span></div>
+    <canvas id="tela" width="600" height="600"></canvas>
+    <div id="msg"></div>
+    <button id="btnIniciar">▶ JOGAR</button>
+
+    <div id="controles">
+        <button class="botao-seta" id="cima">▲</button>
+        <button class="botao-seta" id="esq">◄</button>
+        <button class="botao-seta" id="baixo">▼</button>
+        <button class="botao-seta" id="dir">►</button>
+    </div>
+
+<script>
+    const canvas = document.getElementById('tela');
+    const ctx = canvas.getContext('2d');
+    const pontosEl = document.getElementById('pontos');
+    const msgEl = document.getElementById('msg');
+    const btnIniciar = document.getElementById('btnIniciar');
+
+    // Tamanho dos blocos agora é 40 (porque a tela é 600 e o labirinto é 15x15)
+    const T = 40, C = 15; 
+    let pontos = 0, fim = false, jogando = false;
+    let audioCtx;
+
+    let mapaOriginal = [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,2,2,2,2,2,1,2,1,2,2,2,2,2,1],
+        [1,3,1,1,2,1,1,2,1,1,2,1,1,3,1],
+        [1,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+        [1,2,1,1,2,1,0,0,0,1,2,1,1,2,1],
+        [1,2,2,2,2,1,0,0,0,1,2,2,2,2,1],
+        [1,1,1,1,2,1,0,0,0,1,2,1,1,1,1],
+        [0,0,0,0,2,0,0,0,0,0,2,0,0,0,0],
+        [1,1,1,1,2,1,0,0,0,1,2,1,1,1,1],
+        [1,2,2,2,2,1,0,0,0,1,2,2,2,2,1],
+        [1,2,1,1,2,1,1,1,1,1,2,1,1,2,1],
+        [1,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+        [1,3,1,1,2,1,1,2,1,1,2,1,1,3,1],
+        [1,2,2,2,2,2,1,2,1,2,2,2,2,2,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ];
+    let mapa = [];
+
+    let j = { x:7, y:11, dx:0, dy:0, px:0, py:0, boca:0, dboca:1 };
+    let fantasmas = [
+        { x:6, y:7, dx:1, dy:0, cor:'#ff0000' },
+        { x:7, y:7, dx:-1, dy:0, cor:'#ffb8ff' },
+        { x:8, y:7, dx:0, dy:-1, cor:'#00ffff' }
+    ];
+
+    function som(freq, dur) {
+        if(!audioCtx) return;
+        try {
+            let o = audioCtx.createOscillator(), g = audioCtx.createGain();
+            o.connect(g); g.connect(audioCtx.destination);
+            o.type = 'square'; o.frequency.value = freq;
+            g.gain.setValueAtTime(0.08, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + dur);
+            o.start(); o.stop(audioCtx.currentTime + dur);
+        } catch(e) {}
+    }
+
+    function resetMapa() { mapa = mapaOriginal.map(l => [...l]); }
+
+    function iniciar() {
+        try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){}
+        btnIniciar.style.display = 'none';
+        msgEl.innerText = "";
+        resetMapa();
+        pontos = 0; pontosEl.innerText = pontos; fim = false; jogando = true;
+        j.x=7; j.y=11; j.dx=0; j.dy=0; j.px=0; j.py=0;
+        fantasmas[0].x=6; fantasmas[0].y=7; fantasmas[0].dx=1; fantasmas[0].dy=0;
+        fantasmas[1].x=7; fantasmas[1].y=7; fantasmas[1].dx=-1; fantasmas[1].dy=0;
+        fantasmas[2].x=8; fantasmas[2].y=7; fantasmas[2].dx=0; fantasmas[2].dy=-1;
+    }
+
+    btnIniciar.addEventListener('click', iniciar);
+    btnIniciar.addEventListener('touchstart', (e) => { e.preventDefault(); iniciar(); });
+
+    function setDir(dx, dy) {
+        if(fim) { iniciar(); return; }
+        if(jogando) { j.px = dx; j.py = dy; }
+    }
+
+    document.getElementById('cima').addEventListener('click', () => setDir(0,-1));
+    document.getElementById('baixo').addEventListener('click', () => setDir(0,1));
+    document.getElementById('esq').addEventListener('click', () => setDir(-1,0));
+    document.getElementById('dir').addEventListener('click', () => setDir(1,0));
+
+    document.getElementById('cima').addEventListener('touchstart', (e) => { e.preventDefault(); setDir(0,-1); });
+    document.getElementById('baixo').addEventListener('touchstart', (e) => { e.preventDefault(); setDir(0,1); });
+    document.getElementById('esq').addEventListener('touchstart', (e) => { e.preventDefault(); setDir(-1,0); });
+    document.getElementById('dir').addEventListener('touchstart', (e) => { e.preventDefault(); setDir(1,0); });
+
+    document.addEventListener('keydown', e => {
+        if(e.key==='ArrowUp') setDir(0,-1);
+        if(e.key==='ArrowDown') setDir(0,1);
+        if(e.key==='ArrowLeft') setDir(-1,0);
+        if(e.key==='ArrowRight') setDir(1,0);
+    });
+
+    function parede(x,y) {
+        if(x<0||x>=C||y<0||y>=C) return true;
+        return mapa[y][x]===1;
+    }
+
+    function update() {
+        if(!parede(j.x+j.px, j.y+j.py)) { j.dx=j.px; j.dy=j.py; }
+        if(!parede(j.x+j.dx, j.y+j.dy)) { j.x+=j.dx; j.y+=j.dy; }
+        
+        j.boca += 0.2 * j.dboca;
+        if(j.boca>0.4 || j.boca<0) j.dboca*=-1;
+
+        if(mapa[j.y][j.x]===2) { mapa[j.y][j.x]=0; pontos+=10; pontosEl.innerText=pontos; som(600,0.1); checarVitoria(); }
+        if(mapa[j.y][j.x]===3) { mapa[j.y][j.x]=0; pontos+=50; pontosEl.innerText=pontos; som(800,0.1); checarVitoria(); }
+
+        fantasmas.forEach(f => {
+            if(parede(f.x+f.dx, f.y+f.dy) || Math.random()<0.2) {
+                let dirs = [{dx:0,dy:-1},{dx:0,dy:1},{dx:-1,dy:0},{dx:1,dy:0}].filter(d => !parede(f.x+d.dx, f.y+d.dy) && !(d.dx===-f.dx && d.dy===-f.dy));
+                if(dirs.length>0) { let nd=dirs[Math.floor(Math.random()*dirs.length)]; f.dx=nd.dx; f.dy=nd.dy; }
+                else { f.dx*=-1; f.dy*=-1; }
+            }
+            f.x+=f.dx; f.y+=f.dy;
+            if(f.x<0) f.x=C-1; if(f.x>=C) f.x=0;
+            
+            if(f.x===j.x && f.y===j.y) {
+                fim=true; msgEl.innerText="GAME OVER! Clique para recomeçar.";
+                msgEl.style.color="#f00"; som(200,0.5);
+            }
+        });
+    }
+
+    function checarVitoria() {
+        if(!mapa.flat().includes(2) && !mapa.flat().includes(3)) {
+            fim=true; msgEl.innerText="VOCÊ VENCEU! Clique para recomeçar.";
+            msgEl.style.color="#0f0"; som(523,0.1); setTimeout(()=>som(784,0.2),150);
+        }
+    }
+
+    function draw() {
+        ctx.clearRect(0,0,600,600); // Tamanho novo da tela limpa
+        for(let y=0; y<C; y++) for(let x=0; x<C; x++) {
+            if(mapa[y][x]===1) { ctx.fillStyle='#1919A6'; ctx.fillRect(x*T,y*T,T,T); }
+            if(mapa[y][x]===2) { ctx.fillStyle='#ffb8ae'; ctx.beginPath(); ctx.arc(x*T+T/2,y*T+T/2,4,0,Math.PI*2); ctx.fill(); }
+            if(mapa[y][x]===3) { ctx.fillStyle='#ffb8ae'; ctx.beginPath(); ctx.arc(x*T+T/2,y*T+T/2,10,0,Math.PI*2); ctx.fill(); }
+        }
+        
+        let px=j.x*T+T/2, py=j.y*T+T/2, r=T/2-2, a=0;
+        if(j.dx===1)a=0; else if(j.dx===-1)a=Math.PI; else if(j.dy===-1)a=-Math.PI/2; else if(j.dy===1)a=Math.PI/2;
+        ctx.fillStyle='#ffff00'; ctx.beginPath(); ctx.arc(px,py,r,a+j.boca,a+(Math.PI*2-j.boca)); ctx.lineTo(px,py); ctx.fill();
+
+        fantasmas.forEach(f => {
+            let fx=f.x*T+T/2, fy=f.y*T+T/2;
+            ctx.fillStyle=f.cor; ctx.beginPath(); ctx.arc(fx,fy-2,r,Math.PI,0);
+            ctx.lineTo(fx+r,fy+r-2); ctx.lineTo(fx+r/2,fy+r-6); ctx.lineTo(fx,fy+r-2); ctx.lineTo(fx-r/2,fy+r-6); ctx.lineTo(fx-r,fy+r-2);
+            ctx.closePath(); ctx.fill();
+            ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(fx-6,fy-6,6,0,Math.PI*2); ctx.arc(fx+6,fy-6,6,0,Math.PI*2); ctx.fill();
+            ctx.fillStyle='#00f'; ctx.beginPath(); ctx.arc(fx-6+f.dx,fy-6+f.dy,3,0,Math.PI*2); ctx.arc(fx+6+f.dx,fy-6+f.dy,3,0,Math.PI*2); ctx.fill();
+        });
+    }
+
+    let ult=0;
+    function loop(t) {
+        requestAnimationFrame(loop);
+        if(t-ult<300) return; 
+        ult=t;
+        if(jogando && !fim) update();
+        draw();
+    }
+    requestAnimationFrame(loop);
+</script>
+</body>
+</html>
